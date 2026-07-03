@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Switch, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Switch, ActivityIndicator, Alert, Dimensions, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect } from 'expo-router'; 
 import { router } from 'expo-router';
 import { supabase } from '../../utils/supabase';
+
+const { width } = Dimensions.get('window');
+const FOLDER_WIDTH = (width - 60) / 2;
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -17,8 +20,18 @@ export default function ProfileScreen() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
+  // Dynamic Data States
   const [visitedPlaces, setVisitedPlaces] = useState<any[]>([]);
+  const [toVisitPlaces, setToVisitPlaces] = useState<any[]>([]);
+  const [userLists, setUserLists] = useState<any[]>([]);
+  const [selectedList, setSelectedList] = useState<any>(null);
+  const [listItems, setListItems] = useState<any[]>([]);
+  
   const [stats, setStats] = useState({ visited: 0, toVisit: 0, lists: 0 });
+
+  // Android-Friendly Inline List Creation State
+  const [isCreatingList, setIsCreatingList] = useState(false);
+  const [newListName, setNewListName] = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -36,27 +49,39 @@ export default function ProfileScreen() {
   const fetchUserData = async () => {
     if (!session?.user?.id) return;
 
-    const { data, error } = await supabase
+    // 1. Fetch Visited Places
+    const { data: vData } = await supabase
       .from('reviews')
-      .select(`
-        id,
-        rating,
-        diary_entry,
-        created_at,
-        places (
-          id,
-          title,
-          location,
-          image_url
-        )
-      `)
+      .select(`id, rating, diary_entry, created_at, places ( id, title, location, image_url )`)
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false });
 
-    if (data) {
-      setVisitedPlaces(data);
-      setStats(prev => ({ ...prev, visited: data.length }));
-    }
+    if (vData) setVisitedPlaces(vData);
+
+    // 2. Fetch To Visit Places
+    const { data: tData } = await supabase
+      .from('bookmarks')
+      .select(`id, created_at, places ( id, title, location, image_url )`)
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+      
+    if (tData) setToVisitPlaces(tData);
+
+    // 3. Fetch Custom Lists
+    const { data: lData } = await supabase
+      .from('custom_lists')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+      
+    if (lData) setUserLists(lData);
+
+    // Update real stats
+    setStats({
+      visited: vData ? vData.length : 0,
+      toVisit: tData ? tData.length : 0,
+      lists: lData ? lData.length : 0
+    });
   };
 
   useFocusEffect(
@@ -66,6 +91,45 @@ export default function ProfileScreen() {
       }
     }, [session])
   );
+
+  const fetchItemsForList = async (listId: string) => {
+    const { data } = await supabase
+      .from('list_items')
+      .select(`id, status, created_at, place:places ( id, title, location, image_url )`)
+      .eq('list_id', listId)
+      .order('created_at', { ascending: false });
+      
+    if (data) setListItems(data);
+  };
+
+  // Inline List Creation Function
+  const saveNewList = async () => {
+    if (!newListName.trim()) {
+      setIsCreatingList(false);
+      return;
+    }
+    if (session?.user?.id) {
+      const { data, error } = await supabase
+        .from('custom_lists')
+        .insert({ user_id: session.user.id, name: newListName.trim() })
+        .select()
+        .single();
+        
+      if (error) {
+        Alert.alert('Error', 'Could not create list.');
+      } else if (data) {
+        setUserLists([data, ...userLists]);
+        setStats(prev => ({ ...prev, lists: prev.lists + 1 }));
+      }
+    }
+    setIsCreatingList(false);
+    setNewListName('');
+  };
+
+  const handleOpenFolder = (list: any) => {
+    setSelectedList(list);
+    fetchItemsForList(list.id);
+  };
 
   const handleCopyLink = async () => {
     await Clipboard.setStringAsync('traveller.explorer.share.com');
@@ -77,6 +141,8 @@ export default function ProfileScreen() {
     await supabase.auth.signOut();
     setActiveTab('Account');
     setVisitedPlaces([]); 
+    setToVisitPlaces([]);
+    setUserLists([]);
     setStats({ visited: 0, toVisit: 0, lists: 0 });
   };
 
@@ -110,8 +176,6 @@ export default function ProfileScreen() {
             <TouchableOpacity style={styles.iconCircle}>
               <FontAwesome name="upload" size={16} color="#ffffff" />
             </TouchableOpacity>
-            
-            {/* Cog icon also goes to edit profile as a shortcut */}
             <TouchableOpacity style={styles.iconCircle} onPress={() => router.push('/edit-profile')}>
               <FontAwesome name="cog" size={18} color="#ffffff" />
             </TouchableOpacity>
@@ -120,13 +184,13 @@ export default function ProfileScreen() {
 
         {/* Tab Pills */}
         <View style={styles.tabContainer}>
-          <TouchableOpacity style={[styles.tabItem, activeTab === 'Visited' && styles.tabItemActive]} onPress={() => setActiveTab('Visited')}>
+          <TouchableOpacity style={[styles.tabItem, activeTab === 'Visited' && styles.tabItemActive]} onPress={() => { setActiveTab('Visited'); setSelectedList(null); }}>
             <FontAwesome name="map-marker" size={14} color={activeTab === 'Visited' ? '#1c1c1c' : '#ffffff'} style={styles.tabIcon} />
             <Text style={activeTab === 'Visited' ? styles.tabTextActive : styles.tabText}>Visited</Text>
           </TouchableOpacity>
           <Text style={styles.tabDivider}>|</Text>
           
-          <TouchableOpacity style={[styles.tabItem, activeTab === 'To Visit' && styles.tabItemActive]} onPress={() => setActiveTab('To Visit')}>
+          <TouchableOpacity style={[styles.tabItem, activeTab === 'To Visit' && styles.tabItemActive]} onPress={() => { setActiveTab('To Visit'); setSelectedList(null); }}>
             <FontAwesome name="bookmark-o" size={14} color={activeTab === 'To Visit' ? '#1c1c1c' : '#ffffff'} style={styles.tabIcon} />
             <Text style={activeTab === 'To Visit' ? styles.tabTextActive : styles.tabText}>To Visit</Text>
           </TouchableOpacity>
@@ -137,7 +201,7 @@ export default function ProfileScreen() {
             <Text style={activeTab === 'List' ? styles.tabTextActive : styles.tabText}>List</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={[styles.tabItem, activeTab === 'Account' && styles.tabItemActive]} onPress={() => setActiveTab('Account')}>
+          <TouchableOpacity style={[styles.tabItem, activeTab === 'Account' && styles.tabItemActive]} onPress={() => { setActiveTab('Account'); setSelectedList(null); }}>
             <FontAwesome name="user-o" size={14} color={activeTab === 'Account' ? '#1c1c1c' : '#ffffff'} style={styles.tabIcon} />
             <Text style={activeTab === 'Account' ? styles.tabTextActive : styles.tabText}>Account</Text>
           </TouchableOpacity>
@@ -146,28 +210,24 @@ export default function ProfileScreen() {
         {/* ======================================= */}
         {/* VISITED TAB CONTENT                     */}
         {/* ======================================= */}
-        {(activeTab === 'Visited' || activeTab === 'To Visit' || activeTab === 'List') && (
+        {activeTab === 'Visited' && (
           <View>
             {!session ? (
               <View style={styles.guestState}>
-                <Text style={styles.guestText}>Log in to see your lists and reviews.</Text>
+                <Text style={styles.guestText}>Log in to see your reviews.</Text>
                 <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/login')}>
                   <Text style={styles.loginButtonText}>Log In / Sign Up</Text>
                 </TouchableOpacity>
               </View>
-            ) : visitedPlaces.length === 0 && activeTab === 'Visited' ? (
-              <View style={styles.guestState}>
-                <Text style={styles.guestText}>You haven't logged any trips yet!</Text>
-              </View>
-            ) : activeTab === 'Visited' ? (
+            ) : visitedPlaces.length === 0 ? (
+              <View style={styles.guestState}><Text style={styles.guestText}>You haven't logged any trips yet!</Text></View>
+            ) : (
               visitedPlaces.map((review) => (
                 <TouchableOpacity key={review.id} style={styles.placeCard}>
                   <Image source={{ uri: review.places?.image_url }} style={styles.placeImage} />
                   <View style={styles.placeDetails}>
                     <Text style={styles.placeTitle}>{review.places?.title}</Text>
-                    <View style={styles.starsRow}>
-                      {renderStars(review.rating)}
-                    </View>
+                    <View style={styles.starsRow}>{renderStars(review.rating)}</View>
                     <Text style={styles.placeDesc} numberOfLines={2}>{review.diary_entry}</Text>
                     <Text style={styles.placeDate}>
                       {new Date(review.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
@@ -175,12 +235,142 @@ export default function ProfileScreen() {
                   </View>
                 </TouchableOpacity>
               ))
-            ) : null}
+            )}
+          </View>
+        )}
+
+        {/* ======================================= */}
+        {/* TO VISIT TAB CONTENT                    */}
+        {/* ======================================= */}
+        {activeTab === 'To Visit' && (
+          <View>
+            {!session ? (
+              <View style={styles.guestState}>
+                <Text style={styles.guestText}>Log in to see your bucket list.</Text>
+                <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/login')}>
+                  <Text style={styles.loginButtonText}>Log In / Sign Up</Text>
+                </TouchableOpacity>
+              </View>
+            ) : toVisitPlaces.length === 0 ? (
+              <View style={styles.guestState}><Text style={styles.guestText}>Your To-Visit list is empty!</Text></View>
+            ) : (
+              toVisitPlaces.map((bookmark) => (
+                <TouchableOpacity key={bookmark.id} style={styles.placeCard}>
+                  <Image source={{ uri: bookmark.places?.image_url }} style={styles.placeImage} />
+                  <View style={styles.placeDetails}>
+                    <Text style={styles.placeTitle}>{bookmark.places?.title}</Text>
+                    <Text style={styles.placeDesc} numberOfLines={1}>{bookmark.places?.location}</Text>
+                    <Text style={[styles.placeDate, { marginTop: 8 }]}>
+                      Added {new Date(bookmark.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        )}
+
+        {/* ======================================= */}
+        {/* LISTS TAB (FOLDERS) CONTENT             */}
+        {/* ======================================= */}
+        {activeTab === 'List' && !selectedList && (
+          <View>
+            {!session ? (
+              <View style={styles.guestState}>
+                <Text style={styles.guestText}>Log in to create custom lists.</Text>
+                <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/login')}>
+                  <Text style={styles.loginButtonText}>Log In / Sign Up</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View>
+                {/* INLINE LIST CREATION FOR ANDROID/IOS */}
+                {isCreatingList ? (
+                  <View style={styles.createListBox}>
+                    <TextInput
+                      style={styles.createListInput}
+                      placeholder="Enter folder name (e.g., Euro Trip)"
+                      placeholderTextColor="#a0a0a0"
+                      value={newListName}
+                      onChangeText={setNewListName}
+                      autoFocus
+                    />
+                    <View style={styles.createListActions}>
+                      <TouchableOpacity onPress={() => setIsCreatingList(false)} style={styles.cancelBtn}>
+                        <Text style={styles.cancelBtnText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={saveNewList} style={styles.saveBtn}>
+                        <Text style={styles.saveBtnText}>Save</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.addListBtn} onPress={() => setIsCreatingList(true)}>
+                    <FontAwesome name="plus" size={16} color="#1c1c1c" />
+                    <Text style={styles.addListText}>Create New List</Text>
+                  </TouchableOpacity>
+                )}
+                
+                {userLists.length === 0 ? (
+                  <View style={styles.guestState}><Text style={styles.guestText}>You haven't created any custom lists yet.</Text></View>
+                ) : (
+                  <View style={styles.folderGrid}>
+                    {userLists.map((list) => (
+                      <TouchableOpacity key={list.id} style={styles.folderContainer} onPress={() => handleOpenFolder(list)}>
+                        <View style={styles.folderIconBox}>
+                          <FontAwesome name="folder" size={40} color="#a7a6ff" />
+                        </View>
+                        <Text style={styles.folderTitle} numberOfLines={1}>{list.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ======================================= */}
+        {/* INSIDE A SPECIFIC LIST FOLDER           */}
+        {/* ======================================= */}
+        {activeTab === 'List' && selectedList && (
+          <View>
+            <TouchableOpacity style={styles.backBtn} onPress={() => setSelectedList(null)}>
+              <FontAwesome name="arrow-left" size={16} color="#a7a6ff" />
+              <Text style={styles.backBtnText}>Back to Lists</Text>
+            </TouchableOpacity>
+            
+            <Text style={styles.sectionTitle}>{selectedList.name}</Text>
+            
+            {listItems.length === 0 ? (
+              <View style={styles.guestState}><Text style={styles.guestText}>This folder is empty.</Text></View>
+            ) : (
+              listItems.map((item) => (
+                <TouchableOpacity key={item.id} style={styles.placeCard}>
+                  <Image source={{ uri: item.place?.image_url }} style={styles.placeImage} />
+                  
+                  {/* Dynamic Status Badge */}
+                  {item.status !== 'LISTED' && (
+                    <View style={[styles.badge, { backgroundColor: item.status === 'VISITED' ? '#a7a6ff' : '#ff9f43' }]}>
+                      <Text style={styles.badgeText}>{item.status}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.placeDetails}>
+                    <Text style={styles.placeTitle}>{item.place?.title}</Text>
+                    <Text style={styles.placeDesc} numberOfLines={1}>{item.place?.location}</Text>
+                    <Text style={[styles.placeDate, { marginTop: 8 }]}>
+                      Added {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         )}
 
         {/* ======================= */}
-        {/* ACCOUNT TAB CONTENT     */}
+        {/* FULL ACCOUNT TAB CONTENT */}
         {/* ======================= */}
         {activeTab === 'Account' && (
           <View>
@@ -230,11 +420,11 @@ export default function ProfileScreen() {
                     <Text style={styles.statLabel}>Visited</Text>
                   </View>
                   <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>0</Text>
+                    <Text style={styles.statNumber}>{stats.toVisit}</Text>
                     <Text style={styles.statLabel}>To Visit</Text>
                   </View>
                   <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>0</Text>
+                    <Text style={styles.statNumber}>{stats.lists}</Text>
                     <Text style={styles.statLabel}>List</Text>
                   </View>
                 </View>
@@ -254,7 +444,6 @@ export default function ProfileScreen() {
                 <Switch value={isDarkMode} onValueChange={setIsDarkMode} trackColor={{ false: '#333333', true: '#a7a6ff' }} thumbColor="#ffffff" />
               </View>
 
-              {/* NEW EDIT PROFILE BUTTON */}
               {session && (
                 <TouchableOpacity style={styles.listItem} onPress={() => router.push('/edit-profile')}>
                   <View style={styles.listIconBox}><FontAwesome name="pencil-square-o" size={16} color="#a7a6ff" /></View>
@@ -313,7 +502,8 @@ const styles = StyleSheet.create({
   loginButton: { backgroundColor: '#a7a6ff', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
   loginButtonText: { color: '#1c1c1c', fontWeight: 'bold', fontSize: 16 },
 
-  placeCard: { flexDirection: 'row', backgroundColor: '#434343', borderRadius: 15, padding: 12, marginBottom: 15 },
+  // List Item Cards (Used in Visited, To Visit, and Nested Lists)
+  placeCard: { flexDirection: 'row', backgroundColor: '#434343', borderRadius: 15, padding: 12, marginBottom: 15, position: 'relative' },
   placeImage: { width: 90, height: 90, borderRadius: 10, marginRight: 15 },
   placeDetails: { flex: 1, justifyContent: 'center' },
   placeTitle: { fontSize: 18, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
@@ -322,6 +512,32 @@ const styles = StyleSheet.create({
   placeDesc: { fontSize: 12, color: '#d3d3d3', marginBottom: 6 },
   placeDate: { fontSize: 12, color: '#a7a6ff', fontWeight: 'bold' },
 
+  // Badges for Nested Lists
+  badge: { position: 'absolute', top: -5, right: -5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, zIndex: 10, borderWidth: 2, borderColor: '#333333' },
+  badgeText: { fontSize: 10, fontWeight: '900', color: '#1c1c1c' },
+
+  // Folder Grid & List Creation Styling
+  addListBtn: { flexDirection: 'row', backgroundColor: '#a7a6ff', padding: 15, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  addListText: { color: '#1c1c1c', fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
+  
+  createListBox: { backgroundColor: '#434343', borderRadius: 15, padding: 15, marginBottom: 20 },
+  createListInput: { color: '#ffffff', fontSize: 16, borderBottomWidth: 1, borderBottomColor: '#a7a6ff', paddingBottom: 5, marginBottom: 15 },
+  createListActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 20 },
+  cancelBtn: { paddingVertical: 5 },
+  cancelBtnText: { color: '#a0a0a0', fontWeight: 'bold' },
+  saveBtn: { paddingVertical: 5 },
+  saveBtnText: { color: '#a7a6ff', fontWeight: 'bold' },
+
+  folderGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  folderContainer: { width: FOLDER_WIDTH, height: 140, marginBottom: 20, backgroundColor: '#434343', borderRadius: 15, padding: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#555' },
+  folderIconBox: { marginBottom: 10 },
+  folderTitle: { color: '#ffffff', fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
+
+  backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+  backBtnText: { color: '#a7a6ff', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+  sectionTitle: { fontSize: 24, fontWeight: 'bold', color: '#ffffff', marginBottom: 20 },
+
+  // Full Account Tab Styling restored
   card: { backgroundColor: '#434343', borderRadius: 20, padding: 20, marginBottom: 20 },
   profileTopRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
   avatarContainer: { position: 'relative', marginRight: 15 },

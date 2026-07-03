@@ -14,7 +14,9 @@ const apiSecret = 'a4-TXmGam3zAKKQghUPtSnXdtN0';
 
 export default function ReviewScreen() {
   const insets = useSafeAreaInsets();
-  const { placeId } = useLocalSearchParams(); 
+  
+  // Grab ALL the parameters passed from the Map screen
+  const { placeId, actionType = 'visited', listId, listStatus, addToProfile } = useLocalSearchParams(); 
 
   const [place, setPlace] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -25,6 +27,13 @@ export default function ReviewScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [session, setSession] = useState<any>(null);
 
+  // Dynamic checks to adjust the UI and validation
+  const isToVisitOnly = actionType === 'tovisit';
+  const isListFlow = actionType === 'list';
+  const requiresRating = actionType === 'visited' || (isListFlow && listStatus === 'VISITED');
+  
+  const pageTitle = isListFlow ? 'Add to Custom List' : (isToVisitOnly ? 'Add to Bucket List' : 'Add Review');
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -34,7 +43,7 @@ export default function ReviewScreen() {
       if (!placeId) {
         setLoading(false); return;
       }
-      const { data, error } = await supabase.from('places').select('*').eq('id', placeId).single(); 
+      const { data } = await supabase.from('places').select('*').eq('id', placeId).single(); 
       if (data) setPlace(data);
       setLoading(false);
     };
@@ -72,19 +81,14 @@ export default function ReviewScreen() {
 
   // --- SIGNED CLOUDINARY UPLOAD LOGIC ---
   const uploadToCloudinary = async (imageUri: string) => {
-    // 1. Generate a timestamp
     const timestamp = Math.round(new Date().getTime() / 1000).toString();
-    
-    // 2. Create the string to sign (must be in alphabetical order of parameters)
     const stringToSign = `timestamp=${timestamp}${apiSecret}`;
     
-    // 3. Generate the SHA-1 signature
     const signature = await Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA1,
       stringToSign
     );
 
-    // 4. Attach everything to FormData
     const data = new FormData();
     data.append('file', {
       uri: imageUri,
@@ -95,7 +99,6 @@ export default function ReviewScreen() {
     data.append('timestamp', timestamp);
     data.append('signature', signature);
 
-    // 5. Send to Cloudinary
     const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
       method: 'POST',
       body: data,
@@ -105,7 +108,6 @@ export default function ReviewScreen() {
     if (result.secure_url) {
       return result.secure_url;
     } else {
-      console.error("Cloudinary Error:", result);
       throw new Error(result.error?.message || 'Cloudinary upload failed');
     }
   };
@@ -113,20 +115,21 @@ export default function ReviewScreen() {
   const handleSubmit = async () => {
     if (!session) return router.push('/login');
     
-    if (rating === 0) {
+    // 1. Dynamic Validation
+    if (requiresRating && rating === 0) {
       return Alert.alert('Hold on!', 'Please give this place a rating (1-5 stars).');
     }
     if (images.length === 0) {
-      return Alert.alert('Photo Required', 'Please upload at least 1 photo of this place.');
+      return Alert.alert('Photo Required', 'Please upload at least 1 photo to save this place.');
     }
 
     setSubmitting(true);
 
     try {
-      // 1. Upload the FIRST image to Cloudinary using your API keys
+      // 2. Upload to Cloudinary
       const uploadedImageUrl = await uploadToCloudinary(images[0].uri);
 
-      // 2. Update the Place's Cover Photo in Supabase with the Cloudinary URL
+      // 3. Update the Place's Cover Photo
       const { error: updateError } = await supabase
         .from('places')
         .update({ image_url: uploadedImageUrl })
@@ -134,19 +137,51 @@ export default function ReviewScreen() {
 
       if (updateError) throw updateError;
 
-      // 3. Save the Review to the database
-      const { error: reviewError } = await supabase
-        .from('reviews')
-        .insert({
+      // 4. THE ROUTING LOGIC: Save to the correct table based on user's choice
+      
+      if (actionType === 'visited') {
+        // SAVING AS VISITED
+        const { error: reviewError } = await supabase.from('reviews').insert({
           user_id: session.user.id,
           place_id: placeId,
           rating: rating,
           diary_entry: reviewText,
         });
+        if (reviewError) throw reviewError;
 
-      if (reviewError) throw reviewError;
+      } else if (actionType === 'tovisit') {
+        // SAVING TO BUCKET LIST
+        const { error: bookmarkError } = await supabase.from('bookmarks').insert({
+          user_id: session.user.id,
+          place_id: placeId
+        });
+        if (bookmarkError && bookmarkError.code !== '23505') throw bookmarkError; 
 
-      Alert.alert('Awesome!', 'Your review and photos have been saved.');
+      } else if (actionType === 'list') {
+        // SAVING TO A SPECIFIC CUSTOM FOLDER
+        const { error: listError } = await supabase.from('list_items').insert({
+          list_id: listId,
+          place_id: placeId,
+          status: listStatus // 'VISITED' or 'TO VISIT'
+        });
+        if (listError) throw listError;
+
+        // If they checked "Add to main profile?", save it there too!
+        if (addToProfile === 'true') {
+          if (listStatus === 'VISITED') {
+            await supabase.from('reviews').insert({
+              user_id: session.user.id, place_id: placeId, rating: rating, diary_entry: reviewText,
+            });
+          } else {
+            const { error: bkErr } = await supabase.from('bookmarks').insert({
+              user_id: session.user.id, place_id: placeId
+            });
+            if (bkErr && bkErr.code !== '23505') throw bkErr;
+          }
+        }
+      }
+
+      Alert.alert('Success!', 'Your place has been saved to your profile.');
       router.back(); 
       
     } catch (error: any) {
@@ -165,7 +200,7 @@ export default function ReviewScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
           <FontAwesome name="times" size={24} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Review</Text>
+        <Text style={styles.headerTitle}>{pageTitle}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -182,7 +217,9 @@ export default function ReviewScreen() {
           </View>
         </View>
 
-        <Text style={styles.inputLabel}>How was your experience? *</Text>
+        <Text style={styles.inputLabel}>
+          How was your experience? {requiresRating ? '*' : '(Optional)'}
+        </Text>
         <View style={styles.starsContainer}>
           {[1, 2, 3, 4, 5].map((star) => (
             <TouchableOpacity key={star} onPress={() => setRating(star)} style={styles.starBtn}>
@@ -210,11 +247,11 @@ export default function ReviewScreen() {
           )}
         </View>
 
-        <Text style={styles.inputLabel}>Write your diary entry</Text>
+        <Text style={styles.inputLabel}>Write your notes (Optional)</Text>
         <View style={styles.textAreaBox}>
           <TextInput
             style={styles.textArea}
-            placeholder="What did you love about this place?"
+            placeholder={isToVisitOnly ? "Why do you want to visit this place?" : "What did you love about this place?"}
             placeholderTextColor="#666666"
             multiline
             numberOfLines={5}
@@ -228,7 +265,7 @@ export default function ReviewScreen() {
           {submitting ? (
              <ActivityIndicator size="small" color="#1c1c1c" />
           ) : (
-             <Text style={styles.submitBtnText}>Save to My Profile</Text>
+             <Text style={styles.submitBtnText}>Save to Profile</Text>
           )}
         </TouchableOpacity>
 

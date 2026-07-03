@@ -1,9 +1,30 @@
 import { Tabs } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Platform } from 'react-native';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
-    <Tabs screenOptions={{ tabBarActiveTintColor: '#000000', headerShown: false }}>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#a7a6ff',
+        tabBarInactiveTintColor: '#666666',
+        tabBarStyle: {
+          backgroundColor: '#1c1c1c',
+          borderTopWidth: 0,
+          elevation: 0,
+          shadowOpacity: 0,
+          // Dynamically adding the system button height to our base 60px height
+          height: 60 + insets.bottom, 
+          // Pushing the icons up above the system buttons
+          paddingBottom: Platform.OS === 'android' ? insets.bottom + 10 : insets.bottom,
+          paddingTop: 10,
+        },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
@@ -11,7 +32,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <FontAwesome name="home" size={24} color={color} />,
         }}
       />
-      {/* Replaced 'search' with 'map' */}
       <Tabs.Screen
         name="map"
         options={{

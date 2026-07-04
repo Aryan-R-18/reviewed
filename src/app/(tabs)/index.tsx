@@ -13,15 +13,19 @@ const GEOAPIFY_API_KEY = 'baa5bb2ffedf473a942a0d04b9f33dd1';
 const CATEGORY_IMAGES = {
   visited: [
     'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=800&q=80',
-    'https://images.unsplash.com/photo-1522083111452-9df725c57b70?w=800&q=80',
-    'https://images.unsplash.com/photo-1513622470522-26c311512bf6?w=800&q=80',
-    'https://images.unsplash.com/photo-1520939817895-060bdaf4ed1b?w=800&q=80',
+    'https://images.unsplash.com/photo-1668524475551-96a74f88cdf3?w=600&q=80',
+    'https://images.unsplash.com/photo-1554444699-2603e75b7b44?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OHx8dG9wJTIwdmlzaXRlZCUyMHBsYWNlc3xlbnwwfHwwfHx8MA%3D%3D',
+    'https://images.unsplash.com/photo-1605036687969-9c2878c7395b?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTB8fHRvcCUyMHZpc2l0ZWQlMjBwbGFjZXN8ZW58MHx8MHx8fDA%3D',
   ],
   historical: [
-    'https://images.unsplash.com/photo-1552832233-4cb50aa22b3e?w=800&q=80',
-    'https://images.unsplash.com/photo-1533050487297-09b450131914?w=800&q=80',
+    'https://plus.unsplash.com/premium_photo-1661963952208-2db3512ef3de?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8Y29sb3NzZW98ZW58MHx8MHx8fDA%3D',
+    'https://plus.unsplash.com/premium_photo-1700828949362-b7c4900551fe?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8YmFzaWxpY2ElMjBkaSUyMHNhbnxlbnwwfHwwfHx8MA%3D%3D',
     'https://images.unsplash.com/photo-1542820229-081e0c12af0b?w=800&q=80',
-    'https://images.unsplash.com/photo-1505826759037-406b40feb4cd?w=800&q=80',
+    'https://plus.unsplash.com/premium_photo-1676391399721-87078f87da25?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8cGFudGhlb258ZW58MHx8MHx8fDA%3D',
+    'https://images.unsplash.com/photo-1557741999-ff7ded52cde5?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NHx8Y2FzdGVsJTIwc2FudCUyMGFuZ2Vsb3xlbnwwfHwwfHx8MA%3D%3D',
+    'https://images.unsplash.com/photo-1666727803564-74533995629e?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NHx8cGFvbG8lMjBmdW9yaXxlbnwwfHwwfHx8MA%3D%3D',
+    'https://images.unsplash.com/photo-1739874729849-2039afb19389?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8cGlhenolMjBkaSUyMHNwYWduYXxlbnwwfHwwfHx8MA%3D%3D',
+    'https://images.unsplash.com/photo-1704215000884-c1f36ba716c8?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OHx8cm9tZSUyMGhpc3RvcmljYWwlMjBwbGFjZXxlbnwwfHwwfHx8MA%3D%3D',
   ],
   beaches: [
     'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
@@ -30,7 +34,7 @@ const CATEGORY_IMAGES = {
     'https://images.unsplash.com/photo-1506929562872-bb421503ef21?w=800&q=80',
   ],
   romantic: [
-    'https://images.unsplash.com/photo-1518182170546-076616fd6aa5?w=800&q=80',
+    'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR9oIEO44Rv4cN73mLkZpl7oHgXCAmyV1tZPGl7AzyBSQ&s=10',
     'https://images.unsplash.com/photo-1494522855154-9297ac14b55f?w=800&q=80',
     'https://images.unsplash.com/photo-1529154036614-a60975f5c760?w=800&q=80',
     'https://images.unsplash.com/photo-1532453288672-3a27e9be9efd?w=800&q=80',

@@ -28,7 +28,7 @@ export default function EditProfileScreen() {
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -46,11 +46,9 @@ export default function EditProfileScreen() {
     try {
       // 1. Upload new image to Cloudinary using API Key & Secret
       if (imageUri) {
-        // --- PUT YOUR CLOUDINARY CREDENTIALS HERE ---
-        const cloudName = 'dl2wqsr7y'; 
-        const apiKey = '966949323589765'; 
-        const apiSecret = 'a4-TXmGam3zAKKQghUPtSnXdtN0'; 
-        // --------------------------------------------
+        const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME!;
+        const apiKey = process.env.EXPO_PUBLIC_CLOUDINARY_API_KEY!;
+        const apiSecret = process.env.CLOUDINARY_API_SECRET!;
 
         // Create a signature using the current timestamp and your secret
         const timestamp = Math.round(new Date().getTime() / 1000).toString();

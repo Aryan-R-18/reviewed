@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
+import CryptoJS from 'crypto-js';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../utils/supabase';
-import CryptoJS from 'crypto-js';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -19,7 +19,7 @@ export default function LoginScreen() {
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -44,11 +44,9 @@ export default function LoginScreen() {
 
         // 1. Upload image to Cloudinary using API Key & Secret
         if (imageUri) {
-          // --- PUT YOUR CLOUDINARY CREDENTIALS HERE ---
-          const cloudName = 'dl2wqsr7y'; 
-          const apiKey = '966949323589765'; 
-          const apiSecret = 'a4-TXmGam3zAKKQghUPtSnXdtN0'; 
-          // --------------------------------------------
+          const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME!;
+          const apiKey = process.env.EXPO_PUBLIC_CLOUDINARY_API_KEY!;
+          const apiSecret = process.env.CLOUDINARY_API_SECRET!;
 
           const timestamp = Math.round(new Date().getTime() / 1000).toString();
           const stringToSign = `timestamp=${timestamp}${apiSecret}`;

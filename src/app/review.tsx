@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
+import * as ImagePicker from 'expo-image-picker';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../utils/supabase';
 
 // --- CLOUDINARY CREDENTIALS ---
-const cloudName = 'dl2wqsr7y'; 
-const apiKey = '966949323589765'; 
-const apiSecret = 'a4-TXmGam3zAKKQghUPtSnXdtN0'; 
+const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME!;
+const apiKey = process.env.EXPO_PUBLIC_CLOUDINARY_API_KEY!;
+const apiSecret = process.env.CLOUDINARY_API_SECRET!;
 
 export default function ReviewScreen() {
   const insets = useSafeAreaInsets();
@@ -64,7 +64,7 @@ export default function ReviewScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.7, 

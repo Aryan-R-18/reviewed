@@ -1,6 +1,6 @@
-import 'react-native-url-polyfill/auto';
-import * as SecureStore from 'expo-secure-store';
 import { createClient } from '@supabase/supabase-js';
+import * as SecureStore from 'expo-secure-store';
+import 'react-native-url-polyfill/auto';
 
 // We create a custom storage adapter so users stay logged in when they close the app!
 const ExpoSecureStoreAdapter = {
@@ -15,9 +15,8 @@ const ExpoSecureStoreAdapter = {
   },
 };
 
-// ⚠️ REPLACE THESE WITH YOUR ACTUAL URL AND KEY FROM SUPABASE
-const supabaseUrl = 'https://pbjuggirnpztqlmygjmb.supabase.co';
-const supabaseAnonKey = 'sb_publishable_o9y6simpP3MQb6KLGuVWYw_EIWeOBPA';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

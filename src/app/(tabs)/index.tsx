@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ImageBackground, TouchableOpacity, ActivityIndicator, FlatList, Dimensions, Alert } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, FlatList, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../utils/supabase';
 
 const { width } = Dimensions.get('window');
 // Made the cards smaller: 45% of the screen width
 const CARD_WIDTH = width * 0.45; 
-const GEOAPIFY_API_KEY = 'baa5bb2ffedf473a942a0d04b9f33dd1'; 
+const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY!;
 
 const CATEGORY_IMAGES = {
   visited: [

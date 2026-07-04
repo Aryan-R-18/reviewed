@@ -27,6 +27,11 @@
     },
     "plugins": [
       "expo-router",
+      "expo-system-ui",
+      [
+        "react-native-maps",
+        {}
+      ],
       [
         "expo-splash-screen",
         {

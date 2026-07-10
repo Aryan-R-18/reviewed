@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import 'react-native-url-polyfill/auto';
 
 // Platform-aware storage: localStorage on web (client only), SecureStore on native
 const isWebClient = Platform.OS === 'web' && typeof localStorage !== 'undefined';

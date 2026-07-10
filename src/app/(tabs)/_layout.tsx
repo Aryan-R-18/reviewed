@@ -1,7 +1,7 @@
-import { Tabs } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Tabs } from 'expo-router';
 import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -52,6 +52,10 @@ export default function TabLayout() {
           title: 'Account',
           tabBarIcon: ({ color }) => <FontAwesome name="user" size={24} color={color} />,
         }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{ href: null }}
       />
     </Tabs>
   );

@@ -1,7 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, FlatList, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../utils/supabase';
 
@@ -211,15 +211,12 @@ export default function HomeScreen() {
           <Text style={styles.greetingText}>Welcome,</Text>
           <Text style={styles.headerTitle}>{firstName}</Text>
         </View>
-        <TouchableOpacity style={styles.searchIcon}>
-          <FontAwesome name="search" size={20} color="#ffffff" />
-        </TouchableOpacity>
+        <Image source={require('../../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
       </View>
 
       {loading ? (
         <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color="#a7a6ff" />
-          <Text style={styles.loaderText}>Discovering the world...</Text>
+          <Image source={require('../../../assets/loader.gif')} style={styles.loaderGif} />
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -238,10 +235,12 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 20 },
   greetingText: { fontSize: 16, color: '#a0a0a0', marginBottom: 2 },
   headerTitle: { fontSize: 32, fontWeight: '900', color: '#a7a6ff' },
+  headerLogo: { width: 44, height: 44, borderRadius: 22 },
   searchIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#434343', justifyContent: 'center', alignItems: 'center' },
   
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100 },
   loaderText: { color: '#a0a0a0', marginTop: 15, fontSize: 16, fontWeight: '500' },
+  loaderGif: { width: 80, height: 80 },
 
   sectionWrapper: { marginBottom: 35 },
   sectionHeader: { paddingHorizontal: 20, marginBottom: 15 },

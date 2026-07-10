@@ -1,19 +1,18 @@
 import { FontAwesome } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import React, { Component, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Keyboard, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../utils/supabase';
 
 const { width } = Dimensions.get('window');
 
-// Lazy-load react-native-maps so a native module mismatch doesn't crash the whole app
+// react-native-maps requires a native build — crashes in Expo Go
 let MapView: any = null;
 let Marker: any = null;
 let Callout: any = null;
 let mapsAvailable = false;
-
 try {
   const RNMaps = require('react-native-maps');
   MapView = RNMaps.default;
@@ -22,16 +21,6 @@ try {
   mapsAvailable = true;
 } catch (_) {
   mapsAvailable = false;
-}
-
-// Error boundary to catch any remaining native crash
-class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
-  state = { hasError: false };
-  static getDerivedStateFromError() { return { hasError: true }; }
-  render() {
-    if (this.state.hasError) return <MapUnavailable />;
-    return this.props.children;
-  }
 }
 
 function MapUnavailable() {
@@ -57,6 +46,7 @@ function MapScreenInner() {
   const [showOptionsCard, setShowOptionsCard] = useState(false);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
+
   const [cardStep, setCardStep] = useState<'main' | 'select_list' | 'list_options'>('main');
   const [userLists, setUserLists] = useState<any[]>([]);
   const [selectedList, setSelectedList] = useState<any>(null);
@@ -64,7 +54,9 @@ function MapScreenInner() {
   const [addToProfile, setAddToProfile] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
   }, []);
 
   const handleSearch = async () => {
@@ -73,20 +65,23 @@ function MapScreenInner() {
     setSearching(true);
     resetCard();
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Please grant location permissions to search.');
+        setSearching(false);
         return;
       }
       const geocodedLocation = await Location.geocodeAsync(searchQuery);
-      if (geocodedLocation?.length > 0) {
+      if (geocodedLocation && geocodedLocation.length > 0) {
         const { latitude, longitude } = geocodedLocation[0];
-        setSearchedPlace({ lat: latitude, lng: longitude, name: searchQuery });
+        const newPlace = { lat: latitude, lng: longitude, name: searchQuery };
+        setSearchedPlace(newPlace);
         mapRef.current?.animateToRegion({ latitude, longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 }, 1000);
       } else {
         Alert.alert('Not Found', 'Could not find that location.');
       }
     } catch (error) {
+      console.error(error);
       Alert.alert('Error', 'Something went wrong while searching.');
     } finally {
       setSearching(false);
@@ -107,8 +102,13 @@ function MapScreenInner() {
     if (existingPlace) return existingPlace.id;
     const { data: newPlace, error } = await supabase
       .from('places')
-      .insert({ title: searchedPlace.name, location: `${searchedPlace.lat.toFixed(2)}, ${searchedPlace.lng.toFixed(2)}`, image_url: 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80' })
-      .select('id').single();
+      .insert({
+        title: searchedPlace.name,
+        location: `${searchedPlace.lat.toFixed(2)}, ${searchedPlace.lng.toFixed(2)}`,
+        image_url: 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80',
+      })
+      .select('id')
+      .single();
     if (error) { console.error('Sync Error:', error); return null; }
     return newPlace.id;
   };
@@ -145,7 +145,9 @@ function MapScreenInner() {
     if (placeId) {
       router.push({ pathname: '/review', params: { placeId, actionType: 'list', listId: selectedList.id, listStatus, addToProfile: addToProfile ? 'true' : 'false' } });
       resetCard();
-    } else Alert.alert('Error', 'Could not process this location.');
+    } else {
+      Alert.alert('Error', 'Could not process this location.');
+    }
   };
 
   return (
@@ -265,11 +267,7 @@ function MapScreenInner() {
 
 export default function MapScreen() {
   if (!mapsAvailable) return <MapUnavailable />;
-  return (
-    <MapErrorBoundary>
-      <MapScreenInner />
-    </MapErrorBoundary>
-  );
+  return <MapScreenInner />;
 }
 
 const styles = StyleSheet.create({

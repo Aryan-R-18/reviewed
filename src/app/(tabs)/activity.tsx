@@ -147,7 +147,7 @@ export default function ActivityScreen() {
       </View>
     );
   }
-
+  
   return (
     <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
       <View style={styles.header}>

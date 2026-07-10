@@ -30,7 +30,9 @@
       "expo-system-ui",
       [
         "react-native-maps",
-        {}
+        {
+          "googleMapsApiKey": "AIzaSyCPWm6gyoJ0M5yhJ-YMGta3SYbfKlps-l0"
+        }
       ],
       [
         "expo-splash-screen",

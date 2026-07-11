@@ -4,7 +4,7 @@
     "slug": "reviewed",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/applogo.jpg",
+    "icon": "./assets/applogo.png",
     "scheme": "reviewed",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -12,14 +12,11 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/applogo.jpg",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#1c1c1c",
+        "foregroundImage": "./assets/applogo.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.aryanr18.reviewed"
-      
     },
     "web": {
       "output": "static",

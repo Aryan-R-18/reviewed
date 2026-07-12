@@ -13,20 +13,14 @@ let Marker: any = null;
 let Callout: any = null;
 let mapsAvailable = false;
 
-// New arch throws during module init, not at require() time
-// Check for native modules proxy to detect real native build vs Expo Go
-const isNativeBuild = typeof (globalThis as any).__turboModuleProxy !== 'undefined';
-
-if (isNativeBuild) {
-  try {
-    const RNMaps = require('react-native-maps');
-    MapView = RNMaps.default;
-    Marker = RNMaps.Marker;
-    Callout = RNMaps.Callout;
-    mapsAvailable = !!(MapView && Marker);
-  } catch (_) {
-    mapsAvailable = false;
-  }
+try {
+  const RNMaps = require('react-native-maps');
+  MapView = RNMaps.default;
+  Marker = RNMaps.Marker;
+  Callout = RNMaps.Callout;
+  mapsAvailable = !!(MapView && Marker);
+} catch (_) {
+  mapsAvailable = false;
 }
 
 type Place = { lat: number; lng: number; name: string };

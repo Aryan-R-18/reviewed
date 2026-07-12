@@ -2,30 +2,23 @@ require('dotenv').config();
 
 module.exports = {
   expo: {
-    name: 'reviewed',
+    name: 'Reviewed',
     slug: 'reviewed',
-    version: '1.0.0',
+    version: '1.0.1',
     orientation: 'portrait',
-    icon: './assets/images/icon.png',
+    icon: './assets/applogonew.png',
     scheme: 'reviewed',
     userInterfaceStyle: 'automatic',
     ios: {
-      icon: './assets/expo.icon',
+      icon: './assets/applogonew.png',
     },
     android: {
       adaptiveIcon: {
-        backgroundColor: '#E6F4FE',
-        foregroundImage: './assets/images/android-icon-foreground.png',
-        backgroundImage: './assets/images/android-icon-background.png',
-        monochromeImage: './assets/images/android-icon-monochrome.png',
+        backgroundColor: '#1c1c1c',
+        foregroundImage: './assets/applogonew.png',
       },
       predictiveBackGestureEnabled: false,
       package: 'com.aryanr18.reviewed',
-      config: {
-        googleMaps: {
-          apiKey: process.env.GOOGLE_MAPS_API_KEY,
-        },
-      },
     },
     web: {
       output: 'static',
@@ -34,18 +27,13 @@ module.exports = {
     plugins: [
       'expo-router',
       'expo-system-ui',
-      [
-        'react-native-maps',
-        {
-          googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
-        },
-      ],
+      'react-native-webview',
       [
         'expo-splash-screen',
         {
-          backgroundColor: '#208AEF',
-          image: './assets/images/splash-icon.png',
-          imageWidth: 76,
+          backgroundColor: '#1c1c1c',
+          image: './assets/applogonew.png',
+          imageWidth: 200,
         },
       ],
       'expo-font',
@@ -74,7 +62,7 @@ module.exports = {
     extra: {
       router: {},
       eas: {
-        projectId: '1137ead5-96b3-4751-a95e-b4fcd847241f',
+        projectId: 'd8279ca4-8bbf-4e5d-a1a0-740f8857522f',
       },
     },
   },

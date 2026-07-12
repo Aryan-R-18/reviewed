@@ -48,10 +48,10 @@ export default function EditProfileScreen() {
       if (imageUri) {
         const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME!;
         const apiKey = process.env.EXPO_PUBLIC_CLOUDINARY_API_KEY!;
-        const apiSecret = process.env.CLOUDINARY_API_SECRET!;
+        const apiSecret = process.env.EXPO_PUBLIC_CLOUDINARY_API_SECRET!;
 
-        // Create a signature using the current timestamp and your secret
         const timestamp = Math.round(new Date().getTime() / 1000).toString();
+        // Cloudinary signature: alphabetically sorted params + api_secret (no & before secret)
         const stringToSign = `timestamp=${timestamp}${apiSecret}`;
         const signature = CryptoJS.SHA1(stringToSign).toString();
 

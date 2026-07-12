@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "reviewed",
+    "name": "Reviewed",
     "slug": "reviewed",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/applogo.png",
+    "icon": "./assets/applogonew.png",
     "scheme": "reviewed",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -13,7 +13,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#1c1c1c",
-        "foregroundImage": "./assets/applogo.png"
+        "foregroundImage": "./assets/applogonew.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.aryanr18.reviewed"
@@ -25,12 +25,7 @@
     "plugins": [
       "expo-router",
       "expo-system-ui",
-      [
-        "react-native-maps",
-        {
-          "androidGoogleMapsApiKey": "AIzaSyAIKQnTRsjayg2gVkyfsbnNVAIvE28NATQ"
-        }
-      ],
+      "react-native-webview",
       [
         "expo-splash-screen",
         {

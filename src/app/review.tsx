@@ -10,7 +10,7 @@ import { supabase } from '../utils/supabase';
 // --- CLOUDINARY CREDENTIALS ---
 const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME!;
 const apiKey = process.env.EXPO_PUBLIC_CLOUDINARY_API_KEY!;
-const apiSecret = process.env.CLOUDINARY_API_SECRET!;
+const apiSecret = process.env.EXPO_PUBLIC_CLOUDINARY_API_SECRET!;
 
 export default function ReviewScreen() {
   const insets = useSafeAreaInsets();

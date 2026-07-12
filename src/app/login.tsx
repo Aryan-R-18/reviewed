@@ -46,7 +46,7 @@ export default function LoginScreen() {
         if (imageUri) {
           const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME!;
           const apiKey = process.env.EXPO_PUBLIC_CLOUDINARY_API_KEY!;
-          const apiSecret = process.env.CLOUDINARY_API_SECRET!;
+          const apiSecret = process.env.EXPO_PUBLIC_CLOUDINARY_API_SECRET!;
 
           const timestamp = Math.round(new Date().getTime() / 1000).toString();
           const stringToSign = `timestamp=${timestamp}${apiSecret}`;

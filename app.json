@@ -2,7 +2,7 @@
   "expo": {
     "name": "reviewed",
     "slug": "reviewed",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/applogo.png",
     "scheme": "reviewed",
@@ -28,7 +28,7 @@
       [
         "react-native-maps",
         {
-          "androidGoogleMapsApiKey": "AIzaSyCPWm6gyoJ0M5yhJ-YMGta3SYbfKlps-l0"
+          "androidGoogleMapsApiKey": "AIzaSyAIKQnTRsjayg2gVkyfsbnNVAIvE28NATQ"
         }
       ],
       [

@@ -8,20 +8,28 @@ import { supabase } from '../../utils/supabase';
 
 const { width } = Dimensions.get('window');
 
-// react-native-maps requires a native build — crashes in Expo Go
 let MapView: any = null;
 let Marker: any = null;
 let Callout: any = null;
 let mapsAvailable = false;
-try {
-  const RNMaps = require('react-native-maps');
-  MapView = RNMaps.default;
-  Marker = RNMaps.Marker;
-  Callout = RNMaps.Callout;
-  mapsAvailable = true;
-} catch (_) {
-  mapsAvailable = false;
+
+// New arch throws during module init, not at require() time
+// Check for native modules proxy to detect real native build vs Expo Go
+const isNativeBuild = typeof (globalThis as any).__turboModuleProxy !== 'undefined';
+
+if (isNativeBuild) {
+  try {
+    const RNMaps = require('react-native-maps');
+    MapView = RNMaps.default;
+    Marker = RNMaps.Marker;
+    Callout = RNMaps.Callout;
+    mapsAvailable = !!(MapView && Marker);
+  } catch (_) {
+    mapsAvailable = false;
+  }
 }
+
+type Place = { lat: number; lng: number; name: string };
 
 function MapUnavailable() {
   return (
@@ -29,7 +37,7 @@ function MapUnavailable() {
       <FontAwesome name="map-o" size={48} color="#a7a6ff" />
       <Text style={styles.unavailableTitle}>Map unavailable</Text>
       <Text style={styles.unavailableText}>
-        Maps require a development or production build.{'\n'}
+        Maps require a production build.{'\n'}
         Run: <Text style={styles.code}>eas build --profile preview</Text>
       </Text>
     </View>
@@ -42,11 +50,10 @@ function MapScreenInner() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
-  const [searchedPlace, setSearchedPlace] = useState<{ lat: number; lng: number; name: string } | null>(null);
+  const [searchedPlace, setSearchedPlace] = useState<Place | null>(null);
   const [showOptionsCard, setShowOptionsCard] = useState(false);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
-
   const [cardStep, setCardStep] = useState<'main' | 'select_list' | 'list_options'>('main');
   const [userLists, setUserLists] = useState<any[]>([]);
   const [selectedList, setSelectedList] = useState<any>(null);
@@ -54,9 +61,7 @@ function MapScreenInner() {
   const [addToProfile, setAddToProfile] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
   }, []);
 
   const handleSearch = async () => {
@@ -65,23 +70,17 @@ function MapScreenInner() {
     setSearching(true);
     resetCard();
     try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant location permissions to search.');
-        setSearching(false);
-        return;
-      }
-      const geocodedLocation = await Location.geocodeAsync(searchQuery);
-      if (geocodedLocation && geocodedLocation.length > 0) {
-        const { latitude, longitude } = geocodedLocation[0];
-        const newPlace = { lat: latitude, lng: longitude, name: searchQuery };
-        setSearchedPlace(newPlace);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'Please grant location permissions.'); setSearching(false); return; }
+      const results = await Location.geocodeAsync(searchQuery);
+      if (results?.length > 0) {
+        const { latitude, longitude } = results[0];
+        setSearchedPlace({ lat: latitude, lng: longitude, name: searchQuery });
         mapRef.current?.animateToRegion({ latitude, longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 }, 1000);
       } else {
         Alert.alert('Not Found', 'Could not find that location.');
       }
-    } catch (error) {
-      console.error(error);
+    } catch (e) {
       Alert.alert('Error', 'Something went wrong while searching.');
     } finally {
       setSearching(false);
@@ -98,17 +97,13 @@ function MapScreenInner() {
 
   const syncPlaceToDatabase = async () => {
     if (!searchedPlace) return null;
-    const { data: existingPlace } = await supabase.from('places').select('id').eq('title', searchedPlace.name).single();
-    if (existingPlace) return existingPlace.id;
-    const { data: newPlace, error } = await supabase
-      .from('places')
-      .insert({
-        title: searchedPlace.name,
-        location: `${searchedPlace.lat.toFixed(2)}, ${searchedPlace.lng.toFixed(2)}`,
-        image_url: 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80',
-      })
-      .select('id')
-      .single();
+    const { data: existing } = await supabase.from('places').select('id').eq('title', searchedPlace.name).single();
+    if (existing) return existing.id;
+    const { data: newPlace, error } = await supabase.from('places').insert({
+      title: searchedPlace.name,
+      location: `${searchedPlace.lat.toFixed(2)}, ${searchedPlace.lng.toFixed(2)}`,
+      image_url: 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80',
+    }).select('id').single();
     if (error) { console.error('Sync Error:', error); return null; }
     return newPlace.id;
   };
@@ -143,28 +138,16 @@ function MapScreenInner() {
     const placeId = await syncPlaceToDatabase();
     setProcessingAction(null);
     if (placeId) {
-      router.push({ pathname: '/review', params: { placeId, actionType: 'list', listId: selectedList.id, listStatus, addToProfile: addToProfile ? 'true' : 'false' } });
+      router.push({ pathname: '/review', params: { placeId, actionType: 'list', listId: selectedList?.id, listStatus, addToProfile: addToProfile ? 'true' : 'false' } });
       resetCard();
-    } else {
-      Alert.alert('Error', 'Could not process this location.');
-    }
+    } else Alert.alert('Error', 'Could not process this location.');
   };
 
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={{ latitude: 20.2961, longitude: 85.8245, latitudeDelta: 5.0, longitudeDelta: 5.0 }}
-        userInterfaceStyle="dark"
-        onPress={resetCard}
-      >
+      <MapView ref={mapRef} style={styles.map} initialRegion={{ latitude: 20.2961, longitude: 85.8245, latitudeDelta: 5.0, longitudeDelta: 5.0 }} userInterfaceStyle="dark" onPress={resetCard}>
         {searchedPlace && (
-          <Marker
-            coordinate={{ latitude: searchedPlace.lat, longitude: searchedPlace.lng }}
-            pinColor="red"
-            onPress={(e: any) => { e.stopPropagation(); setShowOptionsCard(true); }}
-          >
+          <Marker coordinate={{ latitude: searchedPlace.lat, longitude: searchedPlace.lng }} pinColor="red" onPress={(e: any) => { e.stopPropagation(); setShowOptionsCard(true); }}>
             <Callout tooltip={true}><View /></Callout>
           </Marker>
         )}
@@ -173,21 +156,9 @@ function MapScreenInner() {
       <View style={[styles.searchContainer, { top: insets.top + 10 }]}>
         <View style={styles.searchBox}>
           <FontAwesome name="search" size={18} color="#a0a0a0" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search for any place..."
-            placeholderTextColor="#a0a0a0"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-          {searching ? (
-            <ActivityIndicator size="small" color="#a7a6ff" style={styles.searchActionBtn} />
-          ) : (
-            <TouchableOpacity onPress={handleSearch} style={styles.searchActionBtn}>
-              <Text style={styles.goText}>Go</Text>
-            </TouchableOpacity>
+          <TextInput style={styles.searchInput} placeholder="Search for any place..." placeholderTextColor="#a0a0a0" value={searchQuery} onChangeText={setSearchQuery} onSubmitEditing={handleSearch} returnKeyType="search" />
+          {searching ? <ActivityIndicator size="small" color="#a7a6ff" style={styles.searchActionBtn} /> : (
+            <TouchableOpacity onPress={handleSearch} style={styles.searchActionBtn}><Text style={styles.goText}>Go</Text></TouchableOpacity>
           )}
         </View>
       </View>
@@ -203,11 +174,10 @@ function MapScreenInner() {
                   {processingAction === 'visited' ? <ActivityIndicator size="small" color="#1c1c1c" /> : <><FontAwesome name="check-circle" size={16} color="#1c1c1c" style={{ marginRight: 6 }} /><Text style={[styles.actionBtnText, { color: '#1c1c1c' }]}>Visited</Text></>}
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.actionBtn} onPress={handleToVisit} disabled={processingAction !== null}>
-                  {processingAction === 'tovisit' ? <ActivityIndicator size="small" color="#ffffff" /> : <><FontAwesome name="bookmark-o" size={16} color="#ffffff" style={{ marginRight: 6 }} /><Text style={styles.actionBtnText}>To Visit</Text></>}
+                  {processingAction === 'tovisit' ? <ActivityIndicator size="small" color="#fff" /> : <><FontAwesome name="bookmark-o" size={16} color="#fff" style={{ marginRight: 6 }} /><Text style={styles.actionBtnText}>To Visit</Text></>}
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.actionBtn} onPress={startListFlow}>
-                  <FontAwesome name="list-ul" size={16} color="#ffffff" style={{ marginRight: 6 }} />
-                  <Text style={styles.actionBtnText}>+ List</Text>
+                  <FontAwesome name="list-ul" size={16} color="#fff" style={{ marginRight: 6 }} /><Text style={styles.actionBtnText}>+ List</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -227,7 +197,7 @@ function MapScreenInner() {
                     <FontAwesome name="angle-right" size={16} color="#666" />
                   </TouchableOpacity>
                 ))}
-                {userLists.length === 0 && <Text style={styles.emptyListText}>No lists found. Go to your Profile to create one!</Text>}
+                {userLists.length === 0 && <Text style={styles.emptyListText}>No lists found. Create one in your Profile!</Text>}
               </ScrollView>
             </View>
           )}

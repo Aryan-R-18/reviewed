@@ -27,7 +27,6 @@ module.exports = {
     plugins: [
       'expo-router',
       'expo-system-ui',
-      'react-native-webview',
       [
         'expo-splash-screen',
         {

@@ -2,7 +2,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Dimensions, Image, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, Image, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../utils/supabase';
 
@@ -31,6 +31,14 @@ export default function ProfileScreen() {
   // Android-Friendly Inline List Creation State
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [newListName, setNewListName] = useState('');
+
+  // Feature 1: Mark To Visit → Visited modal state
+  const [markVisitedModal, setMarkVisitedModal] = useState(false);
+  const [selectedBookmarkForVisit, setSelectedBookmarkForVisit] = useState<any>(null);
+
+  // Detail view modal state
+  const [detailModal, setDetailModal] = useState(false);
+  const [selectedDetail, setSelectedDetail] = useState<any>(null); // { image, title, location, rating, review, date, status }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -97,8 +105,32 @@ export default function ProfileScreen() {
       .select(`id, status, created_at, place:places ( id, title, location, image_url )`)
       .eq('list_id', listId)
       .order('created_at', { ascending: false });
-      
-    if (data) setListItems(data);
+
+    if (data) {
+      // Enrich VISITED items with their review (rating + diary_entry)
+      const visitedItems = data.filter((item: any) => item.status === 'VISITED');
+      if (visitedItems.length > 0 && session?.user?.id) {
+        const placeIds = visitedItems.map((item: any) => item.place?.id).filter(Boolean);
+        const { data: reviewsData } = await supabase
+          .from('reviews')
+          .select('place_id, rating, diary_entry')
+          .eq('user_id', session.user.id)
+          .in('place_id', placeIds);
+
+        if (reviewsData) {
+          const reviewMap: Record<string, any> = reviewsData.reduce((acc: any, r: any) => {
+            acc[r.place_id] = r;
+            return acc;
+          }, {});
+          setListItems(data.map((item: any) => ({
+            ...item,
+            review: item.status === 'VISITED' ? reviewMap[item.place?.id] ?? null : null,
+          })));
+          return;
+        }
+      }
+      setListItems(data);
+    }
   };
 
   // Inline List Creation Function
@@ -149,6 +181,250 @@ export default function ProfileScreen() {
     return Array.from({ length: count }).map((_, i) => (
       <FontAwesome key={i} name="star" size={14} color="#a7a6ff" style={styles.starIcon} />
     ));
+  };
+
+  // Compact star + number badge shown on cards (e.g.  ★ 4)
+  const renderCompactRating = (rating: number) => (
+    <View style={styles.compactRatingRow}>
+      {[1, 2, 3, 4, 5].map((s) => (
+        <FontAwesome
+          key={s}
+          name={rating >= s ? 'star' : 'star-o'}
+          size={11}
+          color="#a7a6ff"
+          style={{ marginRight: 2 }}
+        />
+      ))}
+      <Text style={styles.compactRatingNum}>{rating}</Text>
+    </View>
+  );
+
+  const openDetail = (detail: any) => {
+    setSelectedDetail(detail);
+    setDetailModal(true);
+  };
+
+  // ─────────────────────────────────────────────────
+  // Feature 1: Mark To Visit → Visited
+  // ─────────────────────────────────────────────────
+  const handleOpenMarkVisitedModal = (bookmark: any) => {
+    setSelectedBookmarkForVisit(bookmark);
+    setMarkVisitedModal(true);
+  };
+
+  const handleMarkVisitedToList = async (list: any) => {
+    setMarkVisitedModal(false);
+    if (!selectedBookmarkForVisit) return;
+    const placeId = selectedBookmarkForVisit.places?.id;
+    const bookmarkId = selectedBookmarkForVisit.id;
+
+    // Delete bookmark first
+    await supabase.from('bookmarks').delete().eq('id', bookmarkId);
+
+    // Remove from local state & update stats
+    setToVisitPlaces(prev => prev.filter(b => b.id !== bookmarkId));
+    setStats(prev => ({ ...prev, toVisit: Math.max(0, prev.toVisit - 1) }));
+
+    // Navigate to review with list params
+    router.push({
+      pathname: '/review',
+      params: {
+        placeId,
+        actionType: 'list',
+        listId: list.id,
+        listStatus: 'VISITED',
+      },
+    });
+  };
+
+  const handleMarkVisitedToProfile = async () => {
+    setMarkVisitedModal(false);
+    if (!selectedBookmarkForVisit) return;
+    const placeId = selectedBookmarkForVisit.places?.id;
+    const bookmarkId = selectedBookmarkForVisit.id;
+
+    // Delete bookmark first
+    await supabase.from('bookmarks').delete().eq('id', bookmarkId);
+
+    // Remove from local state & update stats
+    setToVisitPlaces(prev => prev.filter(b => b.id !== bookmarkId));
+    setStats(prev => ({ ...prev, toVisit: Math.max(0, prev.toVisit - 1) }));
+
+    // Navigate to review as visited
+    router.push({
+      pathname: '/review',
+      params: {
+        placeId,
+        actionType: 'visited',
+      },
+    });
+  };
+
+  // ─────────────────────────────────────────────────
+  // Feature 2: Delete visited review
+  // ─────────────────────────────────────────────────
+  const handleDeleteVisitedReview = (review: any) => {
+    Alert.alert(
+      'Delete Review',
+      'Are you sure you want to delete this review?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('reviews').delete().eq('id', review.id);
+            if (error) {
+              Alert.alert('Error', 'Could not delete review.');
+            } else {
+              setVisitedPlaces(prev => prev.filter(r => r.id !== review.id));
+              setStats(prev => ({ ...prev, visited: Math.max(0, prev.visited - 1) }));
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Feature 2: Edit visited review
+  const handleEditVisitedReview = (review: any) => {
+    router.push({
+      pathname: '/review',
+      params: {
+        placeId: review.places?.id,
+        actionType: 'edit',
+        reviewId: review.id,
+      },
+    });
+  };
+
+  // Feature 2: Delete a To Visit bookmark
+  const handleDeleteBookmark = (bookmark: any) => {
+    Alert.alert(
+      'Remove from To Visit',
+      `Are you sure you want to remove "${bookmark.places?.title}" from your To Visit list?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('bookmarks').delete().eq('id', bookmark.id);
+            if (error) {
+              Alert.alert('Error', 'Could not remove place.');
+            } else {
+              setToVisitPlaces(prev => prev.filter(b => b.id !== bookmark.id));
+              setStats(prev => ({ ...prev, toVisit: Math.max(0, prev.toVisit - 1) }));
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Feature 2: Edit a VISITED list item (navigate to review in edit mode)
+  const handleEditListItem = (item: any) => {
+    if (!selectedList) return;
+    // We need the review that corresponds to this place + user.
+    // We pass placeId and actionType=edit; review.tsx will look up by reviewId.
+    // Since list_items don't directly store review_id, we do a quick lookup here.
+    (async () => {
+      const { data } = await supabase
+        .from('reviews')
+        .select('id')
+        .eq('place_id', item.place?.id)
+        .eq('user_id', session?.user?.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data?.id) {
+        router.push({
+          pathname: '/review',
+          params: {
+            placeId: item.place?.id,
+            actionType: 'edit',
+            reviewId: data.id,
+          },
+        });
+      } else {
+        // No existing review — treat as a fresh visited review for this list item
+        router.push({
+          pathname: '/review',
+          params: {
+            placeId: item.place?.id,
+            actionType: 'list',
+            listId: selectedList.id,
+            listStatus: 'VISITED',
+            listItemId: item.id,
+          },
+        });
+      }
+    })();
+  };
+
+  // Feature 2: Delete list item (inside a folder)
+  const handleDeleteListItem = (item: any) => {
+    Alert.alert(
+      'Remove from List',
+      'Are you sure you want to remove this place from the list?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('list_items').delete().eq('id', item.id);
+            if (error) {
+              Alert.alert('Error', 'Could not remove item.');
+            } else {
+              setListItems(prev => prev.filter(i => i.id !== item.id));
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Feature 2: Delete a custom list (folder)
+  const handleDeleteList = (list: any) => {
+    Alert.alert(
+      'Delete List',
+      `Are you sure you want to delete the list "${list.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('custom_lists').delete().eq('id', list.id);
+            if (error) {
+              Alert.alert('Error', 'Could not delete list.');
+            } else {
+              setUserLists(prev => prev.filter(l => l.id !== list.id));
+              setStats(prev => ({ ...prev, lists: Math.max(0, prev.lists - 1) }));
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ─────────────────────────────────────────────────
+  // Feature 3: Mark list item TO VISIT → VISITED
+  // ─────────────────────────────────────────────────
+  const handleMarkListItemVisited = (item: any) => {
+    if (!selectedList) return;
+    router.push({
+      pathname: '/review',
+      params: {
+        placeId: item.place?.id,
+        actionType: 'list',
+        listId: selectedList.id,
+        listStatus: 'VISITED',
+        listItemId: item.id,
+      },
+    });
   };
 
   if (loading) {
@@ -222,15 +498,44 @@ export default function ProfileScreen() {
               <View style={styles.guestState}><Text style={styles.guestText}>You haven't logged any trips yet!</Text></View>
             ) : (
               visitedPlaces.map((review) => (
-                <TouchableOpacity key={review.id} style={styles.placeCard}>
+                <TouchableOpacity
+                  key={review.id}
+                  style={styles.placeCard}
+                  activeOpacity={0.8}
+                  onPress={() => openDetail({
+                    image: review.places?.image_url,
+                    title: review.places?.title,
+                    location: review.places?.location,
+                    rating: review.rating,
+                    reviewText: review.diary_entry,
+                    date: new Date(review.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+                    status: 'VISITED',
+                  })}
+                >
                   <Image source={{ uri: review.places?.image_url }} style={styles.placeImage} />
                   <View style={styles.placeDetails}>
-                    <Text style={styles.placeTitle}>{review.places?.title}</Text>
-                    <View style={styles.starsRow}>{renderStars(review.rating)}</View>
-                    <Text style={styles.placeDesc} numberOfLines={2}>{review.diary_entry}</Text>
+                    <Text style={styles.placeTitle} numberOfLines={1}>{review.places?.title}</Text>
+                    {review.places?.location ? (
+                      <Text style={styles.placeLocationText} numberOfLines={1}>
+                        <FontAwesome name="map-marker" size={11} color="#a7a6ff" /> {review.places?.location}
+                      </Text>
+                    ) : null}
+                    {renderCompactRating(review.rating)}
+                    {review.diary_entry ? (
+                      <Text style={styles.placeDesc} numberOfLines={1} ellipsizeMode="tail">{review.diary_entry}</Text>
+                    ) : null}
                     <Text style={styles.placeDate}>
                       {new Date(review.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </Text>
+                  </View>
+                  {/* Feature 2: Edit & Delete actions */}
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity style={styles.cardActionBtn} onPress={() => handleEditVisitedReview(review)}>
+                      <FontAwesome name="pencil" size={14} color="#a7a6ff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.cardActionBtn, { marginTop: 8 }]} onPress={() => handleDeleteVisitedReview(review)}>
+                      <FontAwesome name="trash" size={14} color="#ff6b6b" />
+                    </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
               ))
@@ -254,14 +559,45 @@ export default function ProfileScreen() {
               <View style={styles.guestState}><Text style={styles.guestText}>Your To-Visit list is empty!</Text></View>
             ) : (
               toVisitPlaces.map((bookmark) => (
-                <TouchableOpacity key={bookmark.id} style={styles.placeCard}>
+                <TouchableOpacity
+                  key={bookmark.id}
+                  style={styles.placeCard}
+                  activeOpacity={0.8}
+                  onPress={() => openDetail({
+                    image: bookmark.places?.image_url,
+                    title: bookmark.places?.title,
+                    location: bookmark.places?.location,
+                    rating: null,
+                    reviewText: null,
+                    date: new Date(bookmark.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                    status: 'TO VISIT',
+                  })}
+                >
                   <Image source={{ uri: bookmark.places?.image_url }} style={styles.placeImage} />
                   <View style={styles.placeDetails}>
                     <Text style={styles.placeTitle}>{bookmark.places?.title}</Text>
-                    <Text style={styles.placeDesc} numberOfLines={1}>{bookmark.places?.location}</Text>
+                    {bookmark.places?.location ? (
+                      <Text style={styles.placeLocationText} numberOfLines={1}>
+                        <FontAwesome name="map-marker" size={11} color="#a7a6ff" /> {bookmark.places?.location}
+                      </Text>
+                    ) : null}
                     <Text style={[styles.placeDate, { marginTop: 8 }]}>
                       Added {new Date(bookmark.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </Text>
+                    {/* Feature 1: Mark as Visited button */}
+                    <TouchableOpacity
+                      style={styles.markVisitedBtn}
+                      onPress={() => handleOpenMarkVisitedModal(bookmark)}
+                    >
+                      <FontAwesome name="check-circle" size={12} color="#1c1c1c" />
+                      <Text style={styles.markVisitedBtnText}>Mark as Visited</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {/* Feature 2: Delete button for To Visit */}
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity style={styles.cardActionBtn} onPress={() => handleDeleteBookmark(bookmark)}>
+                      <FontAwesome name="trash" size={14} color="#ff6b6b" />
+                    </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
               ))
@@ -315,12 +651,18 @@ export default function ProfileScreen() {
                 ) : (
                   <View style={styles.folderGrid}>
                     {userLists.map((list) => (
-                      <TouchableOpacity key={list.id} style={styles.folderContainer} onPress={() => handleOpenFolder(list)}>
-                        <View style={styles.folderIconBox}>
-                          <FontAwesome name="folder" size={40} color="#a7a6ff" />
-                        </View>
-                        <Text style={styles.folderTitle} numberOfLines={1}>{list.name}</Text>
-                      </TouchableOpacity>
+                      <View key={list.id} style={styles.folderContainer}>
+                        <TouchableOpacity style={styles.folderTouchable} onPress={() => handleOpenFolder(list)}>
+                          <View style={styles.folderIconBox}>
+                            <FontAwesome name="folder" size={40} color="#a7a6ff" />
+                          </View>
+                          <Text style={styles.folderTitle} numberOfLines={1}>{list.name}</Text>
+                        </TouchableOpacity>
+                        {/* Feature 2: Delete list button */}
+                        <TouchableOpacity style={styles.folderDeleteBtn} onPress={() => handleDeleteList(list)}>
+                          <FontAwesome name="trash" size={12} color="#ff6b6b" />
+                        </TouchableOpacity>
+                      </View>
                     ))}
                   </View>
                 )}
@@ -345,9 +687,22 @@ export default function ProfileScreen() {
               <View style={styles.guestState}><Text style={styles.guestText}>This folder is empty.</Text></View>
             ) : (
               listItems.map((item) => (
-                <TouchableOpacity key={item.id} style={styles.placeCard}>
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.placeCard}
+                  activeOpacity={0.8}
+                  onPress={() => openDetail({
+                    image: item.place?.image_url,
+                    title: item.place?.title,
+                    location: item.place?.location,
+                    rating: item.review?.rating ?? null,
+                    reviewText: item.review?.diary_entry ?? null,
+                    date: new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                    status: item.status,
+                  })}
+                >
                   <Image source={{ uri: item.place?.image_url }} style={styles.placeImage} />
-                  
+
                   {/* Dynamic Status Badge */}
                   {item.status !== 'LISTED' && (
                     <View style={[styles.badge, { backgroundColor: item.status === 'VISITED' ? '#a7a6ff' : '#ff9f43' }]}>
@@ -356,11 +711,44 @@ export default function ProfileScreen() {
                   )}
 
                   <View style={styles.placeDetails}>
-                    <Text style={styles.placeTitle}>{item.place?.title}</Text>
-                    <Text style={styles.placeDesc} numberOfLines={1}>{item.place?.location}</Text>
-                    <Text style={[styles.placeDate, { marginTop: 8 }]}>
+                    <Text style={styles.placeTitle} numberOfLines={1}>{item.place?.title}</Text>
+                    {item.place?.location ? (
+                      <Text style={styles.placeLocationText} numberOfLines={1}>
+                        <FontAwesome name="map-marker" size={11} color="#a7a6ff" /> {item.place?.location}
+                      </Text>
+                    ) : null}
+                    {/* Show rating + 1-line review for VISITED items */}
+                    {item.status === 'VISITED' && item.review?.rating != null && (
+                      renderCompactRating(item.review.rating)
+                    )}
+                    {item.status === 'VISITED' && item.review?.diary_entry ? (
+                      <Text style={styles.placeDesc} numberOfLines={1} ellipsizeMode="tail">{item.review.diary_entry}</Text>
+                    ) : null}
+                    <Text style={[styles.placeDate, { marginTop: 4 }]}>
                       Added {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </Text>
+                    {/* Feature 3: Mark TO VISIT items as Visited */}
+                    {item.status === 'TO VISIT' && (
+                      <TouchableOpacity
+                        style={styles.markVisitedBtn}
+                        onPress={() => handleMarkListItemVisited(item)}
+                      >
+                        <FontAwesome name="check-circle" size={12} color="#1c1c1c" />
+                        <Text style={styles.markVisitedBtnText}>Mark as Visited</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Feature 2: Edit (VISITED only) + Delete list item */}
+                  <View style={styles.cardActions}>
+                    {item.status === 'VISITED' && (
+                      <TouchableOpacity style={styles.cardActionBtn} onPress={() => handleEditListItem(item)}>
+                        <FontAwesome name="pencil" size={14} color="#a7a6ff" />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity style={[styles.cardActionBtn, { marginTop: item.status === 'VISITED' ? 8 : 0 }]} onPress={() => handleDeleteListItem(item)}>
+                      <FontAwesome name="trash" size={14} color="#ff6b6b" />
+                    </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
               ))
@@ -477,6 +865,131 @@ export default function ProfileScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* ======================================= */}
+      {/* Place Detail Modal                      */}
+      {/* ======================================= */}
+      <Modal
+        visible={detailModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetailModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { paddingBottom: 30 }]}>
+            {/* Close button */}
+            <TouchableOpacity style={styles.detailCloseBtn} onPress={() => setDetailModal(false)}>
+              <FontAwesome name="times" size={18} color="#a0a0a0" />
+            </TouchableOpacity>
+
+            {/* Place image */}
+            {selectedDetail?.image && (
+              <Image source={{ uri: selectedDetail.image }} style={styles.detailImage} />
+            )}
+
+            {/* Status badge */}
+            {selectedDetail?.status && selectedDetail.status !== 'LISTED' && (
+              <View style={[styles.detailStatusBadge, { backgroundColor: selectedDetail.status === 'VISITED' ? '#a7a6ff' : '#ff9f43' }]}>
+                <Text style={styles.detailStatusText}>{selectedDetail.status}</Text>
+              </View>
+            )}
+
+            {/* Title + Location */}
+            <Text style={styles.detailTitle}>{selectedDetail?.title}</Text>
+            {selectedDetail?.location && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+                <FontAwesome name="map-marker" size={13} color="#a7a6ff" />
+                <Text style={styles.detailLocation}>{selectedDetail.location}</Text>
+              </View>
+            )}
+
+            {/* Star rating (full row) */}
+            {selectedDetail?.rating != null && (
+              <View style={styles.detailStarsRow}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <FontAwesome
+                    key={s}
+                    name={selectedDetail.rating >= s ? 'star' : 'star-o'}
+                    size={22}
+                    color="#a7a6ff"
+                    style={{ marginRight: 4 }}
+                  />
+                ))}
+                <Text style={styles.detailRatingNum}>{selectedDetail.rating} / 5</Text>
+              </View>
+            )}
+
+            {/* Full review text */}
+            {selectedDetail?.reviewText ? (
+              <View style={styles.detailReviewBox}>
+                <Text style={styles.detailReviewLabel}>My Notes</Text>
+                <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
+                  <Text style={styles.detailReviewText}>{selectedDetail.reviewText}</Text>
+                </ScrollView>
+              </View>
+            ) : selectedDetail?.status === 'VISITED' ? (
+              <Text style={styles.detailNoReview}>No notes added.</Text>
+            ) : null}
+
+            {/* Date */}
+            {selectedDetail?.date && (
+              <Text style={styles.detailDate}>📅 {selectedDetail.date}</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================= */}
+      {/* Feature 1: Mark as Visited Modal        */}
+      {/* ======================================= */}
+      <Modal
+        visible={markVisitedModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMarkVisitedModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Add to which list?</Text>
+            <Text style={styles.modalSubtitle}>
+              {selectedBookmarkForVisit?.places?.title}
+            </Text>
+
+            <ScrollView style={styles.modalListScroll} showsVerticalScrollIndicator={false}>
+              {userLists.map((list) => (
+                <TouchableOpacity
+                  key={list.id}
+                  style={styles.modalListItem}
+                  onPress={() => handleMarkVisitedToList(list)}
+                >
+                  <FontAwesome name="folder" size={18} color="#a7a6ff" />
+                  <Text style={styles.modalListItemText}>{list.name}</Text>
+                  <FontAwesome name="angle-right" size={16} color="#a0a0a0" />
+                </TouchableOpacity>
+              ))}
+
+              {userLists.length === 0 && (
+                <Text style={styles.modalEmptyText}>No custom lists yet.</Text>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modalProfileBtn}
+              onPress={handleMarkVisitedToProfile}
+            >
+              <FontAwesome name="user" size={16} color="#1c1c1c" />
+              <Text style={styles.modalProfileBtnText}>Add directly to profile</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setMarkVisitedModal(false)}
+            >
+              <Text style={styles.modalCancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -511,6 +1024,14 @@ const styles = StyleSheet.create({
   placeDesc: { fontSize: 12, color: '#d3d3d3', marginBottom: 6 },
   placeDate: { fontSize: 12, color: '#a7a6ff', fontWeight: 'bold' },
 
+  // Feature 2: Card action buttons (edit / delete icons on the right)
+  cardActions: { justifyContent: 'center', alignItems: 'center', paddingLeft: 8 },
+  cardActionBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#333333', justifyContent: 'center', alignItems: 'center' },
+
+  // Feature 1 & 3: Mark as Visited button inside card
+  markVisitedBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#a7a6ff', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, marginTop: 8, alignSelf: 'flex-start', gap: 5 },
+  markVisitedBtnText: { color: '#1c1c1c', fontSize: 11, fontWeight: 'bold' },
+
   // Badges for Nested Lists
   badge: { position: 'absolute', top: -5, right: -5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, zIndex: 10, borderWidth: 2, borderColor: '#333333' },
   badgeText: { fontSize: 10, fontWeight: '900', color: '#1c1c1c' },
@@ -528,9 +1049,12 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#a7a6ff', fontWeight: 'bold' },
 
   folderGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  folderContainer: { width: FOLDER_WIDTH, height: 140, marginBottom: 20, backgroundColor: '#434343', borderRadius: 15, padding: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#555' },
+  // Feature 2: folder container is now a View so we can overlay the delete button
+  folderContainer: { width: FOLDER_WIDTH, height: 140, marginBottom: 20, backgroundColor: '#434343', borderRadius: 15, borderWidth: 1, borderColor: '#555', position: 'relative' },
+  folderTouchable: { flex: 1, padding: 15, justifyContent: 'center', alignItems: 'center' },
   folderIconBox: { marginBottom: 10 },
   folderTitle: { color: '#ffffff', fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
+  folderDeleteBtn: { position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: 13, backgroundColor: '#333333', justifyContent: 'center', alignItems: 'center' },
 
   backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
   backBtnText: { color: '#a7a6ff', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
@@ -567,4 +1091,38 @@ const styles = StyleSheet.create({
   listTextContent: { flex: 1 },
   listTitle: { fontSize: 14, fontWeight: 'bold', color: '#ffffff', marginBottom: 2 },
   listSubtitle: { fontSize: 11, color: '#a0a0a0' },
+
+  // Feature 1: Mark as Visited Modal styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: '#434343', borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 24, paddingBottom: 40, maxHeight: '75%' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#ffffff', textAlign: 'center', marginBottom: 6 },
+  modalSubtitle: { fontSize: 13, color: '#a0a0a0', textAlign: 'center', marginBottom: 20 },
+  modalListScroll: { maxHeight: 240, marginBottom: 16 },
+  modalListItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333333', borderRadius: 12, padding: 14, marginBottom: 10, gap: 12 },
+  modalListItemText: { flex: 1, color: '#ffffff', fontSize: 15, fontWeight: '600' },
+  modalEmptyText: { color: '#a0a0a0', textAlign: 'center', marginVertical: 10 },
+  modalProfileBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#a7a6ff', borderRadius: 15, padding: 16, marginBottom: 12, gap: 10 },
+  modalProfileBtnText: { color: '#1c1c1c', fontWeight: 'bold', fontSize: 16 },
+  modalCancelBtn: { alignItems: 'center', padding: 12 },
+  modalCancelBtnText: { color: '#a0a0a0', fontSize: 15, fontWeight: '600' },
+
+  // Compact rating & location on place cards
+  placeLocationText: { fontSize: 12, color: '#d3d3d3', marginBottom: 4 },
+  compactRatingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  compactRatingNum: { fontSize: 12, fontWeight: 'bold', color: '#a7a6ff', marginLeft: 6 },
+
+  // Detail Modal styles
+  detailCloseBtn: { alignSelf: 'flex-end', width: 32, height: 32, borderRadius: 16, backgroundColor: '#333333', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  detailImage: { width: '100%', height: 180, borderRadius: 15, marginBottom: 14 },
+  detailStatusBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginBottom: 10 },
+  detailStatusText: { fontSize: 11, fontWeight: 'bold', color: '#1c1c1c' },
+  detailTitle: { fontSize: 22, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
+  detailLocation: { fontSize: 14, color: '#d3d3d3', marginLeft: 6 },
+  detailStarsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  detailRatingNum: { fontSize: 15, fontWeight: 'bold', color: '#a7a6ff', marginLeft: 8 },
+  detailReviewBox: { backgroundColor: '#333333', borderRadius: 14, padding: 14, marginBottom: 14 },
+  detailReviewLabel: { fontSize: 12, fontWeight: 'bold', color: '#a7a6ff', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  detailReviewText: { fontSize: 14, color: '#ffffff', lineHeight: 22 },
+  detailNoReview: { fontSize: 13, color: '#a0a0a0', fontStyle: 'italic', marginBottom: 14 },
+  detailDate: { fontSize: 12, color: '#a0a0a0', fontWeight: '500' },
 });

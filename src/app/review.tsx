@@ -16,7 +16,15 @@ export default function ReviewScreen() {
   const insets = useSafeAreaInsets();
 
   // Grab ALL the parameters passed from the Map/Profile screen
-  const { placeId, actionType = 'visited', listId, listStatus, addToProfile, reviewId } = useLocalSearchParams();
+  const {
+    placeId,
+    actionType = 'visited',
+    listId,
+    listStatus,
+    addToProfile,
+    reviewId,
+    listItemId,
+  } = useLocalSearchParams();
 
   const isEditMode = actionType === 'edit';
 
@@ -44,11 +52,10 @@ export default function ReviewScreen() {
     : 'Add Review';
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    const init = async () => {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      setSession(s);
 
-    const fetchData = async () => {
       if (!placeId) {
         setLoading(false);
         return;
@@ -63,23 +70,42 @@ export default function ReviewScreen() {
       if (placeData) setPlace(placeData);
 
       // In edit mode, pre-fill existing review data
-      if (isEditMode && reviewId) {
-        const { data: reviewData } = await supabase
-          .from('reviews')
-          .select('rating, diary_entry')
-          .eq('id', reviewId)
-          .single();
-        if (reviewData) {
-          setRating(reviewData.rating ?? 0);
-          setReviewText(reviewData.diary_entry ?? '');
+      if (isEditMode) {
+        let revData: any = null;
+        if (reviewId) {
+          const { data } = await supabase
+            .from('reviews')
+            .select('id, rating, diary_entry')
+            .eq('id', reviewId)
+            .single();
+          revData = data;
+        }
+
+        // Fallback: if reviewId was empty or not found, look up by placeId and user_id
+        const uid = s?.user?.id;
+        if (!revData && uid) {
+          const { data } = await supabase
+            .from('reviews')
+            .select('id, rating, diary_entry')
+            .eq('user_id', uid)
+            .eq('place_id', placeId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          revData = data;
+        }
+
+        if (revData) {
+          setRating(revData.rating ?? 0);
+          setReviewText(revData.diary_entry ?? '');
         }
       }
 
       setLoading(false);
     };
 
-    fetchData();
-  }, [placeId, reviewId]);
+    init();
+  }, [placeId, reviewId, isEditMode]);
 
   const pickImage = async () => {
     if (images.length >= 2) {
@@ -175,16 +201,50 @@ export default function ReviewScreen() {
       }
 
       // 3. Route logic
-      if (isEditMode && reviewId) {
-        // --- EDIT: update existing review ---
-        const { error: editError } = await supabase
-          .from('reviews')
-          .update({
+      if (isEditMode) {
+        // --- EDIT MODE: update or create review for this place ---
+        let targetReviewId = reviewId as string | undefined;
+        if (!targetReviewId) {
+          const { data: existingRev } = await supabase
+            .from('reviews')
+            .select('id')
+            .eq('user_id', session.user.id)
+            .eq('place_id', placeId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          if (existingRev?.id) {
+            targetReviewId = existingRev.id;
+          }
+        }
+
+        if (targetReviewId) {
+          const { error: editError } = await supabase
+            .from('reviews')
+            .update({
+              rating,
+              diary_entry: reviewText,
+            })
+            .eq('id', targetReviewId);
+          if (editError) throw editError;
+        } else {
+          // If no review existed yet, insert one
+          const { error: insertRevError } = await supabase.from('reviews').insert({
+            user_id: session.user.id,
+            place_id: placeId,
             rating,
             diary_entry: reviewText,
-          })
-          .eq('id', reviewId);
-        if (editError) throw editError;
+          });
+          if (insertRevError) throw insertRevError;
+        }
+
+        // If this place was edited from within a list, ensure list_items status is VISITED
+        if (listItemId) {
+          await supabase
+            .from('list_items')
+            .update({ status: 'VISITED' })
+            .eq('id', listItemId);
+        }
 
       } else if (actionType === 'visited') {
         // SAVING AS VISITED
@@ -205,30 +265,69 @@ export default function ReviewScreen() {
         if (bookmarkError && bookmarkError.code !== '23505') throw bookmarkError;
 
       } else if (actionType === 'list') {
-        // SAVING TO A SPECIFIC CUSTOM FOLDER
-        const { error: listError } = await supabase.from('list_items').insert({
-          list_id: listId,
-          place_id: placeId,
-          status: listStatus, // 'VISITED' or 'TO VISIT'
-        });
-        if (listError) throw listError;
+        // SAVING / UPDATING IN A SPECIFIC CUSTOM FOLDER
+        if (listItemId) {
+          // Existing list item being updated (e.g. TO VISIT -> VISITED)
+          const { error: updateLiError } = await supabase
+            .from('list_items')
+            .update({ status: listStatus || 'VISITED' })
+            .eq('id', listItemId);
+          if (updateLiError) throw updateLiError;
+        } else if (listId) {
+          // Check if already in this folder
+          const { data: existingLi } = await supabase
+            .from('list_items')
+            .select('id')
+            .eq('list_id', listId)
+            .eq('place_id', placeId)
+            .single();
 
-        // If they checked "Add to main profile?", save it there too!
-        if (addToProfile === 'true') {
-          if (listStatus === 'VISITED') {
-            await supabase.from('reviews').insert({
+          if (existingLi?.id) {
+            await supabase
+              .from('list_items')
+              .update({ status: listStatus || 'VISITED' })
+              .eq('id', existingLi.id);
+          } else {
+            const { error: listError } = await supabase.from('list_items').insert({
+              list_id: listId,
+              place_id: placeId,
+              status: listStatus || 'VISITED',
+            });
+            if (listError) throw listError;
+          }
+        }
+
+        // ALWAYS save the review if status is VISITED!
+        if (listStatus === 'VISITED') {
+          const { data: existingRev } = await supabase
+            .from('reviews')
+            .select('id')
+            .eq('user_id', session.user.id)
+            .eq('place_id', placeId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (existingRev?.id) {
+            await supabase
+              .from('reviews')
+              .update({ rating, diary_entry: reviewText })
+              .eq('id', existingRev.id);
+          } else {
+            const { error: revErr } = await supabase.from('reviews').insert({
               user_id: session.user.id,
               place_id: placeId,
               rating,
               diary_entry: reviewText,
             });
-          } else {
-            const { error: bkErr } = await supabase.from('bookmarks').insert({
-              user_id: session.user.id,
-              place_id: placeId,
-            });
-            if (bkErr && bkErr.code !== '23505') throw bkErr;
+            if (revErr) throw revErr;
           }
+        } else if (listStatus === 'TO VISIT' && addToProfile === 'true') {
+          const { error: bkErr } = await supabase.from('bookmarks').insert({
+            user_id: session.user.id,
+            place_id: placeId,
+          });
+          if (bkErr && bkErr.code !== '23505') throw bkErr;
         }
       }
 

@@ -95,8 +95,11 @@ export default function ProfileScreen() {
     useCallback(() => {
       if (session) {
         fetchUserData();
+        if (selectedList?.id) {
+          fetchItemsForList(selectedList.id);
+        }
       }
-    }, [session])
+    }, [session, selectedList])
   );
 
   const fetchItemsForList = async (listId: string) => {
@@ -107,13 +110,13 @@ export default function ProfileScreen() {
       .order('created_at', { ascending: false });
 
     if (data) {
-      // Enrich VISITED items with their review (rating + diary_entry)
+      // Enrich VISITED items with their review (id, rating + diary_entry)
       const visitedItems = data.filter((item: any) => item.status === 'VISITED');
       if (visitedItems.length > 0 && session?.user?.id) {
         const placeIds = visitedItems.map((item: any) => item.place?.id).filter(Boolean);
         const { data: reviewsData } = await supabase
           .from('reviews')
-          .select('place_id, rating, diary_entry')
+          .select('id, place_id, rating, diary_entry')
           .eq('user_id', session.user.id)
           .in('place_id', placeIds);
 
@@ -325,42 +328,16 @@ export default function ProfileScreen() {
   // Feature 2: Edit a VISITED list item (navigate to review in edit mode)
   const handleEditListItem = (item: any) => {
     if (!selectedList) return;
-    // We need the review that corresponds to this place + user.
-    // We pass placeId and actionType=edit; review.tsx will look up by reviewId.
-    // Since list_items don't directly store review_id, we do a quick lookup here.
-    (async () => {
-      const { data } = await supabase
-        .from('reviews')
-        .select('id')
-        .eq('place_id', item.place?.id)
-        .eq('user_id', session?.user?.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (data?.id) {
-        router.push({
-          pathname: '/review',
-          params: {
-            placeId: item.place?.id,
-            actionType: 'edit',
-            reviewId: data.id,
-          },
-        });
-      } else {
-        // No existing review — treat as a fresh visited review for this list item
-        router.push({
-          pathname: '/review',
-          params: {
-            placeId: item.place?.id,
-            actionType: 'list',
-            listId: selectedList.id,
-            listStatus: 'VISITED',
-            listItemId: item.id,
-          },
-        });
-      }
-    })();
+    router.push({
+      pathname: '/review',
+      params: {
+        placeId: item.place?.id,
+        actionType: 'edit',
+        reviewId: item.review?.id || '',
+        listId: selectedList.id,
+        listItemId: item.id,
+      },
+    });
   };
 
   // Feature 2: Delete list item (inside a folder)

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Reviewed",
     "slug": "reviewed",
-    "version": "1.0.1",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/applogonew.png",
     "scheme": "reviewed",
@@ -16,7 +16,8 @@
         "foregroundImage": "./assets/applogonew.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.aryanr18.reviewed"
+      "package": "com.aryanr18.reviewed",
+      "versionCode": 2
     },
     "web": {
       "output": "static",
